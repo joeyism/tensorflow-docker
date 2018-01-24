@@ -1,0 +1,18 @@
+# Build args.
+ARG DEBIAN_VERSION="stretch"
+
+FROM debian:${DEBIAN_VERSION}
+
+ARG TF_VERSION="1.4.1"
+ARG PY_VERSION_SUFFIX=""
+
+RUN apt-get update && apt-get install -y \
+    python${PY_VERSION_SUFFIX} \
+    python${PY_VERSION_SUFFIX}-pip
+
+# Upgrade pip and setuptools, because ubuntu 14 may have a very old version.
+RUN pip${PY_VERSION_SUFFIX} install --upgrade \
+    pip \
+    setuptools
+
+RUN pip${PY_VERSION_SUFFIX} install tensorflow==${TF_VERSION}

@@ -1,0 +1,70 @@
+# Build args.
+ARG UBUNTU_VERSION="16.04"
+ARG CUDA_VERSION="9.0"
+ARG CUDNN_VERSION="7"
+
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn${CUDNN_VERSION}-devel-ubuntu${UBUNTU_VERSION}
+
+ARG CUDA_VERSION="9.0"
+ARG CUDNN_VERSION="7"
+ARG PY_VERSION_SUFFIX=""
+ARG TF_BRANCH="r1.5"
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    openjdk-8-jdk \
+    python${PY_VERSION_SUFFIX} \
+    python${PY_VERSION_SUFFIX}-dev \
+    python${PY_VERSION_SUFFIX}-pip
+
+# Instal bazel
+RUN echo "deb [arch=amd64] http://storage.googleapis.com/bazel-apt stable jdk1.8" | tee /etc/apt/sources.list.d/bazel.list && \
+    curl https://bazel.build/bazel-release.pub.gpg | apt-key add - && \
+    apt-get update && \
+    apt-get install -y bazel
+
+
+# Upgrade pip and setuptools, because ubuntu 14 may have a very old version.
+RUN pip${PY_VERSION_SUFFIX} install --upgrade \
+    numpy \
+    pip \
+    scipy \
+    setuptools \
+    wheel
+
+# Running bazel inside a `docker build` command causes trouble, cf:
+# https://github.com/bazelbuild/bazel/issues/134
+# The easiest solution is to set up a bazelrc file forcing --batch.
+RUN echo "startup --batch" >>/etc/bazel.bazelrc
+# Similarly, we need to workaround sandboxing issues:
+#   https://github.com/bazelbuild/bazel/issues/418
+RUN echo "build --spawn_strategy=standalone --genrule_strategy=standalone" \
+    >>/etc/bazel.bazelrc
+
+RUN cd / && \
+    git clone http://github.com/tensorflow/tensorflow && \
+    cd /tensorflow && \
+    git checkout ${TF_BRANCH}
+WORKDIR /tensorflow
+
+# Set environment variables for configure.
+ENV PYTHON_BIN_PATH=python${PY_VERSION_SUFFIX} \
+    LD_LIBRARY_PATH=/usr/local/cuda/extras/CUPTI/lib64:${LD_LIBRARY_PATH} \
+    CUDNN_INSTALL_PATH=/usr/lib/x86_64-linux-gnu \
+    TF_NEED_CUDA=1 \
+    TF_CUDA_VERSION=${CUDA_VERSION} \
+    TF_CUDNN_VERSION=${CUDNN_VERSION} \
+    TF_CUDA_COMPUTE_CAPABILITIES=3.0,3.5,5.2,6.0,6.1,7.0
+
+# Build and install the pip package.
+# Currently, libtensorflow framework unnecessarily needs CUDA libraries.
+# Once that dependency is cleared, remove the first two lines.
+RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1 && \
+    export LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:/usr/local/cuda/lib64:${LD_LIBRARY_PATH} && \
+    yes "" | ./configure && \
+    bazel build --config cuda --action_env=LD_LIBRARY_PATH=${LD_LIBRARY_PATH} tensorflow/tools/pip_package:build_pip_package && \
+    mkdir pip_pkg && \
+    bazel-bin/tensorflow/tools/pip_package/build_pip_package pip_pkg --gpu && \
+    pip${PY_VERSION_SUFFIX} install pip_pkg/tensorflow*.whl

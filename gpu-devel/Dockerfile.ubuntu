@@ -17,7 +17,8 @@ RUN apt-get update && apt-get install -y \
     openjdk-8-jdk \
     python${PY_VERSION_SUFFIX} \
     python${PY_VERSION_SUFFIX}-dev \
-    python${PY_VERSION_SUFFIX}-pip
+    python${PY_VERSION_SUFFIX}-pip \
+    swig
 
 # Instal bazel
 RUN echo "deb [arch=amd64] http://storage.googleapis.com/bazel-apt stable jdk1.8" | tee /etc/apt/sources.list.d/bazel.list && \

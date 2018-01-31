@@ -68,3 +68,6 @@ RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/lib
     mkdir pip_pkg && \
     bazel-bin/tensorflow/tools/pip_package/build_pip_package pip_pkg --gpu && \
     pip${PY_VERSION_SUFFIX} install pip_pkg/tensorflow*.whl
+
+# cd out of the bazel workspace for python to work properly.
+WORKDIR /

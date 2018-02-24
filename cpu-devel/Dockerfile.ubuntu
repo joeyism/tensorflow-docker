@@ -1,0 +1,60 @@
+# Build args.
+ARG UBUNTU_VERSION="16.04"
+
+FROM ubuntu:${UBUNTU_VERSION}
+
+ARG PY_VERSION_SUFFIX=""
+ARG TF_BRANCH="r1.6"
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    openjdk-8-jdk \
+    python${PY_VERSION_SUFFIX} \
+    python${PY_VERSION_SUFFIX}-dev \
+    python${PY_VERSION_SUFFIX}-pip \
+    swig
+
+# Instal bazel
+RUN echo "deb [arch=amd64] http://storage.googleapis.com/bazel-apt stable jdk1.8" | tee /etc/apt/sources.list.d/bazel.list && \
+    curl https://bazel.build/bazel-release.pub.gpg | apt-key add - && \
+    apt-get update && \
+    apt-get install -y bazel
+
+
+# Upgrade pip and setuptools, because ubuntu 14 may have a very old version.
+RUN pip${PY_VERSION_SUFFIX} install --upgrade \
+    numpy \
+    pip \
+    scipy \
+    setuptools \
+    wheel
+
+# Running bazel inside a `docker build` command causes trouble, cf:
+# https://github.com/bazelbuild/bazel/issues/134
+# The easiest solution is to set up a bazelrc file forcing --batch.
+RUN echo "startup --batch" >>/etc/bazel.bazelrc
+# Similarly, we need to workaround sandboxing issues:
+#   https://github.com/bazelbuild/bazel/issues/418
+RUN echo "build --spawn_strategy=standalone --genrule_strategy=standalone" \
+    >>/etc/bazel.bazelrc
+
+RUN cd / && \
+    git clone http://github.com/tensorflow/tensorflow && \
+    cd /tensorflow && \
+    git checkout ${TF_BRANCH}
+WORKDIR /tensorflow
+
+# Set environment variables for configure.
+ENV PYTHON_BIN_PATH=python${PY_VERSION_SUFFIX}
+
+# Build and install the pip package.
+RUN yes "" | ./configure && \
+    bazel build tensorflow/tools/pip_package:build_pip_package && \
+    mkdir pip_pkg && \
+    bazel-bin/tensorflow/tools/pip_package/build_pip_package pip_pkg --gpu && \
+    pip${PY_VERSION_SUFFIX} install pip_pkg/tensorflow*.whl
+
+# cd out of the bazel workspace for python to work properly.
+WORKDIR /
